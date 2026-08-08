@@ -482,7 +482,10 @@ const STATUSES = [
   {id:'concluida', label:'Concluída'}
 ];
 const STORAGE_KEY = 'obras-zela-v1';
+const SUPABASE_URL = 'https://cjofjcvkpgoavpwxnvyy.supabase.co';
+const SUPABASE_KEY = 'COLE_AQUI_A_TUA_PUBLISHABLE_KEY';
 
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let state = {
   obras: [],
   view: 'kanban',
@@ -511,23 +514,20 @@ function daysDiff(iso){ if(!iso) return null; const d=new Date(iso+'T00:00:00');
 
 /* ---------- persistence ---------- */
 async function loadData(){
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+async function loadData(){
+  const { data, error } = await supabaseClient
+    .from('obras')
+    .select('*')
+    .order('created_at', { ascending: false });
 
-    if (raw) {
-      state.obras = JSON.parse(raw);
-    } else {
-      state.obras = seed();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.obras));
-    }
-  } catch (e) {
-    console.error('Erro ao carregar dados:', e);
-    state.obras = seed();
-  }
-
-  if (!Array.isArray(state.obras) || !state.obras.length) {
-    state.obras = seed();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.obras));
+  if (error) {
+    console.error('Erro ao carregar:', error);
+    state.obras = [];
+  } else {
+    state.obras = (data || []).map(o => ({
+      ...o,
+      dataPrevista: o.data_entrega || ''
+    }));
   }
 
   state.loaded = true;
@@ -536,14 +536,29 @@ async function loadData(){
 
 async function saveData(showToast){
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.obras));
+    for (const obra of state.obras) {
+      const payload = {
+        id: obra.id,
+        nome: obra.nome,
+        cliente: obra.cliente,
+        estado: obra.status || obra.estado,
+        responsavel: obra.responsavel,
+        valor: obra.valor || 0,
+        data_entrega: obra.dataPrevista || '',
+        notas: obra.notas || ''
+      };
+
+      await supabaseClient
+        .from('obras')
+        .upsert(payload);
+    }
 
     if (showToast) {
       toast('Obra guardada.');
     }
   } catch (e) {
-    console.error('Erro ao guardar dados:', e);
-    toast('Não foi possível guardar os dados.', true);
+    console.error('Erro ao guardar:', e);
+    toast('Erro ao guardar.', true);
   }
 }
 
