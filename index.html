@@ -515,7 +515,7 @@ function daysDiff(iso){ if(!iso) return null; const d=new Date(iso+'T00:00:00');
 
 /* ---------- persistence ---------- */
 async function loadData(){
-async function loadData(){
+async function loadData() {
   try {
     const { data, error } = await supabaseClient
       .from('obras')
@@ -526,17 +526,19 @@ async function loadData(){
       console.error(error);
       state.obras = seed();
     } else {
-      state.obras = (data || []).map(o => ({
-        id: o.id,
-        referencia: o.referencia || '',
-        nome: o.nome || '',
-        cliente: o.cliente || '',
-        status: o.estado || 'Adjudicada',
-        responsavel: o.responsavel || '',
-        valor: o.valor || 0,
-        dataPrevista: o.data_entrega || '',
-        notas: o.notas || ''
-      }));
+      state.obras = (data || []).map(function(o) {
+        return {
+          id: o.id,
+          referencia: o.referencia || '',
+          nome: o.nome || '',
+          cliente: o.cliente || '',
+          status: o.estado || 'Adjudicada',
+          responsavel: o.responsavel || '',
+          valor: o.valor || 0,
+          dataPrevista: o.data_entrega || '',
+          notas: o.notas || ''
+        };
+      });
 
       if (!state.obras.length) {
         state.obras = seed();
@@ -550,8 +552,7 @@ async function loadData(){
   state.loaded = true;
   render();
 }
-
-async function saveData(showToast){
+async function saveData(showToast) {
   try {
     for (const obra of state.obras) {
       await supabaseClient.from('obras').upsert({
@@ -566,10 +567,15 @@ async function saveData(showToast){
       });
     }
 
-    if (showToast) toast('Obra guardada.');
+    if (showToast) {
+      toast('Obra guardada.');
+    }
   } catch (e) {
     console.error('Erro ao guardar:', e);
-    if (showToast) toast('Erro ao guardar.', true);
+
+    if (showToast) {
+      toast('Erro ao guardar.', true);
+    }
   }
 }
 
