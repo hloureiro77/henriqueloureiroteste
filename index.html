@@ -1005,7 +1005,10 @@ function esc(s){
 /* ---------- init ---------- */
 document.querySelector('.nav-item[data-view="kanban"]').classList.add('active');
 loadData();
-
+// ===== INICIAR A APLICAÇÃO =====
+document.addEventListener('DOMContentLoaded', () => {
+  loadData();
+});
 })();
 </script>
 </body>
