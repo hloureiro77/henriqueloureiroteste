@@ -6,6 +6,8 @@
 <title>Mapa de Obras — Alumínios do Zela, Lda</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<!-- Supabase JS tem de carregar ANTES do script principal, senão "supabase" fica undefined -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 :root{
   --bg:#EEF0F2;
@@ -158,6 +160,7 @@ h1,h2,h3,h4,.font-display{
 .btn svg{width:14px; height:14px;}
 .btn-sm{padding:5px 9px; font-size:12px;}
 .btn-icon{padding:7px; width:32px; height:32px; justify-content:center;}
+.btn[disabled]{opacity:.55; cursor:not-allowed;}
 
 .content{padding:22px 26px 60px; flex:1;}
 
@@ -330,6 +333,7 @@ tr:hover td{background:var(--surface-alt);}
 ::-webkit-scrollbar{height:8px; width:8px;}
 ::-webkit-scrollbar-thumb{background:var(--line-strong); border-radius:8px;}
 .hint{font-size:11px; color:var(--ink-faint); margin-top:10px; line-height:1.5;}
+.loading-note{font-size:13px; color:var(--ink-faint); padding:24px; text-align:center;}
 
 @media (max-width: 880px){
   .sidebar{position:fixed; left:0; right:0; bottom:0; top:auto; width:100%; height:auto; flex-direction:row; z-index:50;}
@@ -364,7 +368,7 @@ tr:hover td{background:var(--surface-alt);}
       <button class="nav-item" data-view="kanban"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="1"/><line x1="9" y1="4" x2="9" y2="20"/><line x1="15" y1="4" x2="15" y2="20"/></svg><span>Mapa de Obras</span></button>
       <button class="nav-item" data-view="calendar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="1"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg><span>Planificação Mensal</span></button>
       <button class="nav-item" data-view="list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg><span>Lista de Obras</span></button>
-    <button class="nav-item" data-view="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span>Agenda</span></button>
+      <button class="nav-item" data-view="agenda"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><span>Agenda</span></button>
     </nav>
     <div class="sidebar-foot">Dados partilhados por todos os utilizadores deste separador.</div>
   </aside>
@@ -388,7 +392,7 @@ tr:hover td{background:var(--surface-alt);}
       </div>
     </div>
 
-    <div class="content" id="content"></div>
+    <div class="content" id="content"><div class="loading-note">A carregar dados do Supabase…</div></div>
   </main>
 </div>
 
@@ -461,7 +465,7 @@ tr:hover td{background:var(--surface-alt);}
         <button type="button" class="btn btn-danger" id="btnDeleteObra" style="display:none;">Eliminar obra</button>
         <div style="display:flex; gap:8px; margin-left:auto;">
           <button type="button" class="btn btn-ghost" id="btnCancelModal">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Guardar obra</button>
+          <button type="submit" class="btn btn-primary" id="btnSaveObra">Guardar obra</button>
         </div>
       </div>
     </form>
@@ -473,15 +477,49 @@ tr:hover td{background:var(--surface-alt);}
 <script>
 (function(){
 
+/* =====================================================================
+   ESQUEMA SUPABASE NECESSÁRIO (cria/ajusta estas tabelas no teu projeto)
+   ---------------------------------------------------------------------
+   table: obras
+     id                bigint / int8   (identity / serial, primary key)
+     nome              text
+     cliente           text
+     contacto          text
+     morada            text
+     estado            text            (adjudicada|preparacao|pronta|montagem|concluida)
+     prioridade        text            (alta|media|baixa)
+     responsavel       text
+     valor             numeric
+     data_adjudicacao  date
+     data_entrega      date
+     notas             text
+     referencia        text            (opcional; se não existir, é derivada do id)
+
+   table: tarefas
+     id           bigint / int8 (identity / serial, primary key)
+     colaborador  text
+     tipo         text
+     data         date
+     hora         time
+     obra_id      bigint (nullable, FK para obras.id)
+     obra_nome    text
+
+   IMPORTANTE: ativa Row Level Security (RLS) nestas tabelas e define
+   policies adequadas — sem RLS, qualquer pessoa com a anon key pode
+   ler/escrever/apagar todos os dados diretamente pela API.
+   ===================================================================== */
+
 /* ---------- SUPABASE ---------- */
 const SUPABASE_URL = 'https://cjofjcykpgoavpwxnyyy.supabase.co';
-
 const SUPABASE_ANON_KEY = 'sb_publishable_0AJJL2JOpJ8mKRMOcHFYtA_URIW0LVz';
 
-const supabaseClient = supabase.createClient(
-  SUPABASE_URL,
-  SUPABASE_ANON_KEY
-);
+if (typeof supabase === 'undefined') {
+  document.getElementById('content').innerHTML =
+    '<div class="loading-note">Não foi possível carregar a biblioteca do Supabase (verifica a ligação à internet ou bloqueadores de scripts).</div>';
+  throw new Error('supabase-js não carregou');
+}
+
+const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const STATUSES = [
   {id:'adjudicada', label:'Adjudicada'},
@@ -490,92 +528,109 @@ const STATUSES = [
   {id:'montagem', label:'Em Montagem'},
   {id:'concluida', label:'Concluída'}
 ];
+const COLABORADORES = ["mauricio","henrique","helder","tiago","joao"];
+const TIPOS_TAREFA = ["Ir tirar medidas","Montagem","Assistência","Entrega","Reunião","Outros"];
 
 let state = {
   obras: [],
+  tasks: [],
   view: 'kanban',
   calMonth: new Date().getMonth(),
   calYear: new Date().getFullYear(),
   filters: {status:'', responsavel:'', search:''},
   editingId: null,
-  loaded: false
+  loaded: false,
+  saving: false
 };
 
-const seed = () => ([
-  {id:cid(), referencia:'ZL-2026-001', nome:'Moradia Unifamiliar — Caixilharia Alumínio', cliente:'Maria Fernandes', contacto:'912 345 678', morada:'Rua das Camélias 45, Matosinhos', status:'adjudicada', prioridade:'media', responsavel:'mauricio', valor:8600, dataAdjudicacao:isoDaysFromNow(-4), dataMontagem:isoDaysFromNow(28), notas:'Aguarda confirmação de cor RAL pelo cliente.'},
-  {id:cid(), referencia:'ZL-2026-002', nome:'Edifício Foz Business Center — Fachada', cliente:'Foz Invest, Lda', contacto:'geral@fozinvest.pt', morada:'Av. do Brasil 220, Porto', status:'preparacao', prioridade:'alta', responsavel:'henrique', valor:42500, dataAdjudicacao:isoDaysFromNow(-20), dataMontagem:isoDaysFromNow(6), notas:'Corte e produção de perfis em curso na fábrica.'},
-  {id:cid(), referencia:'ZL-2026-003', nome:'Vivenda Quinta do Lago — Portas de Correr', cliente:'Ricardo Beleza', contacto:'963 221 004', morada:'Estrada da Serra 12, Vila Nova de Gaia', status:'pronta', prioridade:'media', responsavel:'mauricio', valor:15200, dataAdjudicacao:isoDaysFromNow(-35), dataMontagem:isoDaysFromNow(3), notas:'Material em armazém, equipa de montagem confirmada.'},
-  {id:cid(), referencia:'ZL-2026-004', nome:'Loja Continente Gaia — Vitrines', cliente:'Sonae Retalho', contacto:'obras@sonae.pt', morada:'Av. da República 500, Vila Nova de Gaia', status:'montagem', prioridade:'alta', responsavel:'helder', valor:31000, dataAdjudicacao:isoDaysFromNow(-50), dataMontagem:isoDaysFromNow(-2), notas:'Montagem em curso, previsão de conclusão esta semana.'},
-  {id:cid(), referencia:'ZL-2026-005', nome:'Apartamento Boavista T3 — Janelas', cliente:'André e Sofia Matos', contacto:'938 771 220', morada:'Rua de Camões 88, Porto', status:'concluida', prioridade:'baixa', responsavel:'henrique', valor:6300, dataAdjudicacao:isoDaysFromNow(-70), dataMontagem:isoDaysFromNow(-18), notas:'Obra concluída e entregue. Aguarda pagamento final.'},
-]);
-
-function cid(){ return (crypto.randomUUID ? crypto.randomUUID() : 'id-'+Date.now()+'-'+Math.random().toString(16).slice(2)); }
-function isoDaysFromNow(n){ const d=new Date(); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function statusLabel(id){ const s=STATUSES.find(x=>x.id===id); return s?s.label:id; }
 function fmtCurrency(v){ if(v===undefined||v===null||v==='') return '—'; return new Intl.NumberFormat('pt-PT',{style:'currency',currency:'EUR',maximumFractionDigits:0}).format(v); }
 function fmtDate(iso){ if(!iso) return '—'; const d=new Date(iso+'T00:00:00'); return new Intl.DateTimeFormat('pt-PT',{day:'2-digit',month:'2-digit',year:'numeric'}).format(d); }
 function daysDiff(iso){ if(!iso) return null; const d=new Date(iso+'T00:00:00'); const t=new Date(todayISO()+'T00:00:00'); return Math.round((d-t)/86400000); }
+function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+function esc(s){
+  if(s===null||s===undefined) return '';
+  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function errMsg(e){ return (e && (e.message || e.error_description || e.hint)) || 'Erro desconhecido'; }
 
-/* ---------- persistence ---------- */
+/* ---------- mapping DB <-> estado local ---------- */
+function mapRowToObra(o){
+  return {
+    id: String(o.id),
+    referencia: o.referencia || ('ZL-' + String(o.id).padStart(3,'0')),
+    nome: o.nome || '',
+    cliente: o.cliente || '',
+    contacto: o.contacto || '',
+    morada: o.morada || '',
+    status: o.estado || 'adjudicada',
+    prioridade: o.prioridade || 'media',
+    responsavel: o.responsavel || '',
+    valor: Number(o.valor || 0),
+    dataAdjudicacao: o.data_adjudicacao || '',
+    dataMontagem: o.data_entrega || '',
+    notas: o.notas || ''
+  };
+}
+function mapObraToRow(o){
+  return {
+    nome: o.nome,
+    cliente: o.cliente,
+    contacto: o.contacto || null,
+    morada: o.morada || null,
+    estado: o.status,
+    prioridade: o.prioridade,
+    responsavel: o.responsavel || null,
+    valor: (o.valor === null || o.valor === undefined || o.valor === '') ? 0 : Number(o.valor),
+    data_adjudicacao: o.dataAdjudicacao || null,
+    data_entrega: o.dataMontagem || null,
+    notas: o.notas || null
+  };
+}
+function mapRowToTask(t){
+  return {
+    id: String(t.id),
+    colaborador: t.colaborador || '',
+    tipo: t.tipo || '',
+    data: t.data || '',
+    hora: t.hora ? String(t.hora).slice(0,5) : '',
+    obra: t.obra_id !== null && t.obra_id !== undefined ? String(t.obra_id) : '',
+    obraNome: t.obra_nome || ''
+  };
+}
+
+/* ---------- carregamento ---------- */
 async function loadData(){
   try {
     const { data, error } = await supabaseClient
       .from('obras')
       .select('*')
       .order('id', { ascending: true });
-
     if (error) throw error;
-
-    state.obras = (data || []).map(o => ({
-      id: String(o.id),
-      referencia: 'ZL-' + String(o.id).padStart(3,'0'),
-      nome: o.nome || '',
-      cliente: o.cliente || '',
-      contacto: '',
-      morada: '',
-      status: o.estado || 'adjudicada',
-      prioridade: 'media',
-      responsavel: o.responsavel || '',
-      valor: Number(o.valor || 0),
-      dataAdjudicacao: '',
-      dataMontagem: o.data_entrega || '',
-      notas: o.notas || ''
-    }));
-
+    state.obras = (data || []).map(mapRowToObra);
     state.loaded = true;
-    render();
-
   } catch (e) {
     console.error(e);
-    toast('Erro ao ligar ao Supabase', true);
+    toast('Erro ao ligar ao Supabase (obras): ' + errMsg(e), true);
+    state.obras = [];
   }
+  await loadTasks();
+  render();
 }
-async function saveData(showToast){
+
+async function loadTasks(){
   try {
-    const obra = state.obras.find(o => o.id === state.editingId);
-    if (!obra) return;
-
-    const { error } = await supabaseClient
-      .from('obras')
-      .upsert({
-        id: Number(obra.id),
-        nome: obra.nome,
-        cliente: obra.cliente,
-        estado: obra.status,
-        responsavel: obra.responsavel,
-        valor: obra.valor,
-        data_entrega: obra.dataMontagem || null,
-        notas: obra.notas
-      });
-
+    const { data, error } = await supabaseClient
+      .from('tarefas')
+      .select('*')
+      .order('data', { ascending: true });
     if (error) throw error;
-
-    if (showToast) toast('Obra guardada na cloud.');
-
+    state.tasks = (data || []).map(mapRowToTask);
   } catch (e) {
     console.error(e);
-    toast('Erro ao guardar no Supabase', true);
+    state.tasks = state.tasks || [];
+    toast('Erro ao carregar agenda: ' + errMsg(e), true);
   }
 }
 
@@ -586,22 +641,10 @@ function toast(msg, isErr){
   el.className = 'toast-item' + (isErr?' err':'');
   el.textContent = msg;
   box.appendChild(el);
-  setTimeout(()=>{ el.remove(); }, 3200);
+  setTimeout(()=>{ el.remove(); }, 3600);
 }
 
-/* ---------- reference numbers ---------- */
-function nextReferencia(){
-  const year = new Date().getFullYear();
-  const nums = state.obras
-    .map(o => o.referencia||'')
-    .filter(r => r.includes('ZL-'+year))
-    .map(r => parseInt(r.split('-').pop(),10))
-    .filter(n => !isNaN(n));
-  const next = (nums.length ? Math.max(...nums) : 0) + 1;
-  return 'ZL-'+year+'-'+String(next).padStart(3,'0');
-}
-
-/* ---------- navigation ---------- */
+/* ---------- navegação ---------- */
 document.querySelectorAll('.nav-item').forEach(btn=>{
   btn.addEventListener('click', ()=>{
     state.view = btn.dataset.view;
@@ -616,7 +659,7 @@ const titles = {
   kanban:['Mapa de Obras', 'Estado atual de todas as obras da empresa'],
   calendar:['Planificação Mensal', 'Datas de montagem previstas, mês a mês'],
   list:['Lista de Obras', 'Todas as obras, com filtros e pesquisa'],
-  agenda:['Agenda', 'Tarefas por colaborador']
+  agenda:['Agenda', 'Tarefas por colaborador — dados partilhados']
 };
 
 /* ---------- render dispatcher ---------- */
@@ -624,6 +667,10 @@ function render(){
   document.getElementById('viewTitle').textContent = titles[state.view][0];
   document.getElementById('viewSubtitle').textContent = titles[state.view][1];
   const c = document.getElementById('content');
+  if(!state.loaded){
+    c.innerHTML = '<div class="loading-note">A carregar dados do Supabase…</div>';
+    return;
+  }
   if(state.view==='dashboard') c.innerHTML = renderDashboard();
   else if(state.view==='kanban') c.innerHTML = renderKanbanView();
   else if(state.view==='calendar') c.innerHTML = renderCalendarView();
@@ -662,7 +709,6 @@ function kpiCard(label, value, foot, color){
 
 /* ---------- Dashboard view ---------- */
 function renderDashboard(){
-  const k = computeKPIs();
   const proximas = [...state.obras]
     .filter(o=>o.status!=='concluida' && o.dataMontagem)
     .sort((a,b)=> new Date(a.dataMontagem) - new Date(b.dataMontagem))
@@ -797,7 +843,6 @@ function renderCalendarView(){
 
   return html;
 }
-function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
 
 /* ---------- List view ---------- */
 function renderListView(){
@@ -850,7 +895,30 @@ function renderListView(){
   return html;
 }
 
-/* ---------- events per view ---------- */
+/* ---------- Agenda view (agora persistida no Supabase, tabela "tarefas") ---------- */
+function renderAgendaView(){
+  const obraOpts = state.obras.map(o=>'<option value="'+o.id+'">'+esc(o.referencia||'')+' - '+esc(o.nome)+'</option>').join('');
+  let rows = state.tasks.map(t=>'<tr>'
+    + '<td>'+esc(t.colaborador)+'</td><td>'+esc(t.tipo)+'</td><td>'+fmtDate(t.data)+'</td><td>'+esc(t.hora)+'</td><td>'+esc(t.obraNome||'—')+'</td>'
+    + '<td><button class="btn btn-sm" data-edit-task="'+t.id+'">Editar</button> <button class="btn btn-danger btn-sm" data-del-task="'+t.id+'">Eliminar</button></td></tr>').join('');
+  if(!rows) rows = '<tr><td colspan="6" style="text-align:center; color:var(--ink-faint); padding:22px;">Sem tarefas agendadas.</td></tr>';
+
+  return '<div class="panel"><h3>Agenda de Colaboradores</h3>'
+    + '<form id="taskForm" data-idx="">'
+    + '<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px">'
+    + '<select name="col">'+COLABORADORES.map(c=>'<option>'+esc(c)+'</option>').join('')+'</select>'
+    + '<select name="tipo">'+TIPOS_TAREFA.map(t=>'<option>'+esc(t)+'</option>').join('')+'</select>'
+    + '<input type="date" name="data" required>'
+    + '<input type="time" name="hora" required>'
+    + '<select name="obra"><option value="">Sem obra</option>'+obraOpts+'</select>'
+    + '<button class="btn btn-primary" type="submit" id="taskSubmitBtn">Guardar</button>'
+    + '</div></form>'
+    + '<button id="newTask" class="btn btn-ghost btn-sm">Nova tarefa</button>'
+    + '<table style="margin-top:12px"><thead><tr><th>Colaborador</th><th>Tarefa</th><th>Data</th><th>Hora</th><th>Obra</th><th>Ações</th></tr></thead><tbody>'+rows+'</tbody></table>'
+    + '</div>';
+}
+
+/* ---------- eventos por vista ---------- */
 function attachViewEvents(){
   document.querySelectorAll('[data-open]').forEach(el=>{
     el.addEventListener('click', ()=> openModal(el.dataset.open));
@@ -865,13 +933,23 @@ function attachViewEvents(){
     document.querySelectorAll('.column-body').forEach(col=>{
       col.addEventListener('dragover', e=>{ e.preventDefault(); col.classList.add('dragover'); });
       col.addEventListener('dragleave', ()=> col.classList.remove('dragover'));
-      col.addEventListener('drop', e=>{
+      col.addEventListener('drop', async e=>{
         e.preventDefault(); col.classList.remove('dragover');
         const id = e.dataTransfer.getData('text/plain');
         const o = state.obras.find(x=>x.id===id);
-        if(o && o.status!==col.dataset.status){
-          o.status = col.dataset.status;
-          saveData(false); render(); toast('Estado atualizado: '+statusLabel(o.status));
+        if(!o || o.status===col.dataset.status) return;
+        const prevStatus = o.status;
+        o.status = col.dataset.status;
+        render();
+        try {
+          const { error } = await supabaseClient.from('obras').update({estado:o.status}).eq('id', Number(o.id));
+          if(error) throw error;
+          toast('Estado atualizado: '+statusLabel(o.status));
+        } catch(err){
+          console.error(err);
+          o.status = prevStatus;
+          render();
+          toast('Erro ao atualizar estado: ' + errMsg(err), true);
         }
       });
     });
@@ -890,10 +968,87 @@ function attachViewEvents(){
     const st = document.getElementById('fltStatus');
     const rp = document.getElementById('fltResp');
     const cl = document.getElementById('fltClear');
-    s.addEventListener('input', ()=>{ state.filters.search = s.value; render(); document.getElementById('fltSearch').focus(); document.getElementById('fltSearch').setSelectionRange(s.value.length,s.value.length); });
+    s.addEventListener('input', ()=>{
+      state.filters.search = s.value; render();
+      const s2 = document.getElementById('fltSearch');
+      s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length);
+    });
     st.addEventListener('change', ()=>{ state.filters.status = st.value; render(); });
     rp.addEventListener('change', ()=>{ state.filters.responsavel = rp.value; render(); });
     if(cl) cl.addEventListener('click', ()=>{ state.filters={status:'',responsavel:'',search:''}; render(); });
+  }
+
+  if(state.view==='agenda'){
+    const f = document.getElementById('taskForm');
+    const submitBtn = document.getElementById('taskSubmitBtn');
+
+    f.addEventListener('submit', async e=>{
+      e.preventDefault();
+      const idx = f.dataset.idx;
+      const obra = state.obras.find(o=>o.id===f.obra.value);
+      const payload = {
+        colaborador: f.col.value,
+        tipo: f.tipo.value,
+        data: f.data.value,
+        hora: f.hora.value,
+        obra_id: f.obra.value ? Number(f.obra.value) : null,
+        obra_nome: obra ? obra.nome : ''
+      };
+      submitBtn.disabled = true;
+      try {
+        if(idx){
+          const { error } = await supabaseClient.from('tarefas').update(payload).eq('id', Number(idx));
+          if(error) throw error;
+          toast('Tarefa atualizada.');
+        } else {
+          const { error } = await supabaseClient.from('tarefas').insert(payload);
+          if(error) throw error;
+          toast('Tarefa criada.');
+        }
+        await loadTasks();
+        render();
+      } catch(err){
+        console.error(err);
+        toast('Erro ao guardar tarefa: ' + errMsg(err), true);
+        submitBtn.disabled = false;
+      }
+    });
+
+    document.getElementById('newTask').addEventListener('click', ()=>{
+      f.reset(); f.dataset.idx='';
+    });
+
+    document.querySelectorAll('[data-edit-task]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const t = state.tasks.find(x=>x.id===btn.dataset.editTask);
+        if(!t) return;
+        f.dataset.idx = t.id;
+        f.col.value = t.colaborador;
+        f.tipo.value = t.tipo;
+        f.data.value = t.data;
+        f.hora.value = t.hora;
+        f.obra.value = t.obra;
+        f.col.closest('.panel').scrollIntoView({behavior:'smooth', block:'start'});
+      });
+    });
+
+    document.querySelectorAll('[data-del-task]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        if(!confirm('Eliminar esta tarefa?')) return;
+        btn.disabled = true;
+        try {
+          const { error } = await supabaseClient.from('tarefas').delete().eq('id', Number(btn.dataset.delTask));
+          if(error) throw error;
+          await loadTasks();
+          render();
+          toast('Tarefa eliminada.');
+        } catch(err){
+          console.error(err);
+          toast('Erro ao eliminar tarefa: ' + errMsg(err), true);
+          btn.disabled = false;
+        }
+      });
+    });
   }
 }
 function shiftMonth(delta){
@@ -902,52 +1057,17 @@ function shiftMonth(delta){
   state.calMonth=m; state.calYear=y; render();
 }
 
-
-
-function renderAgendaView(){
-const colaboradores=["mauricio","henrique","helder","tiago","joao"];
-if(!state.tasks) state.tasks=JSON.parse(localStorage.getItem("agendaTasks")||"[]");
-const obraOpts=state.obras.map(o=>`<option value="${o.id}">${esc(o.referencia||"")} - ${esc(o.nome)}</option>`).join("");
-let rows=state.tasks.map((t,i)=>`<tr>
-<td>${esc(t.colaborador)}</td><td>${esc(t.tipo)}</td><td>${esc(t.data)}</td><td>${esc(t.hora)}</td><td>${esc(t.obraNome||"—")}</td>
-<td><button class="btn btn-sm" onclick="window.editTask(${i})">Editar</button> <button class="btn btn-danger btn-sm" onclick="window.delTask(${i})">Eliminar</button></td></tr>`).join("");
-if(!rows) rows='<tr><td colspan="6" style="text-align:center">Sem tarefas.</td></tr>';
-setTimeout(()=>{
-const f=document.getElementById("taskForm"); if(!f) return;
-f.onsubmit=(e)=>{e.preventDefault();
-const idx=f.dataset.idx;
-const obra=state.obras.find(o=>o.id===f.obra.value);
-const obj={colaborador:f.col.value,tipo:f.tipo.value,data:f.data.value,hora:f.hora.value,obra:f.obra.value,obraNome:obra?obra.nome:""};
-if(idx===""){state.tasks.push(obj);}else{state.tasks[idx]=obj;}
-localStorage.setItem("agendaTasks",JSON.stringify(state.tasks)); render();};
-window.editTask=(i)=>{const t=state.tasks[i];f.dataset.idx=i;f.col.value=t.colaborador;f.tipo.value=t.tipo;f.data.value=t.data;f.hora.value=t.hora;f.obra.value=t.obra;};
-window.delTask=(i)=>{state.tasks.splice(i,1);localStorage.setItem("agendaTasks",JSON.stringify(state.tasks));render();};
-document.getElementById("newTask").onclick=()=>{f.reset();f.dataset.idx="";};
-},0);
-return `<div class="panel"><h3>Agenda de Colaboradores</h3>
-<form id="taskForm" data-idx="">
-<div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px">
-<select name="col">${colaboradores.map(c=>`<option>${esc(c)}</option>`).join("")}</select>
-<select name="tipo"><option>Ir tirar medidas</option><option>Montagem</option><option>Assistência</option><option>Entrega</option><option>Reunião</option><option>Outros</option></select>
-<input type="date" name="data" required>
-<input type="time" name="hora" required>
-<select name="obra"><option value="">Sem obra</option>${obraOpts}</select>
-<button class="btn btn-primary" type="submit">Guardar</button>
-</div></form>
-<button id="newTask" class="btn">Nova tarefa</button>
-<table><thead><tr><th>Colaborador</th><th>Tarefa</th><th>Data</th><th>Hora</th><th>Obra</th><th>Ações</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-}
-
-
-/* ---------- modal ---------- */
+/* ---------- modal de obra ---------- */
 const overlay = document.getElementById('overlay');
 const form = document.getElementById('obraForm');
+const btnSaveObra = document.getElementById('btnSaveObra');
+const btnDeleteObra = document.getElementById('btnDeleteObra');
 
 function openModal(id){
   state.editingId = id || null;
   const o = id ? state.obras.find(x=>x.id===id) : null;
   document.getElementById('modalTitle').textContent = o ? 'Editar Obra — '+(o.referencia||'') : 'Nova Obra';
-  document.getElementById('btnDeleteObra').style.display = o ? 'inline-flex' : 'none';
+  btnDeleteObra.style.display = o ? 'inline-flex' : 'none';
   document.getElementById('f_nome').value = o ? o.nome : '';
   document.getElementById('f_cliente').value = o ? o.cliente : '';
   document.getElementById('f_contacto').value = o ? (o.contacto||'') : '';
@@ -972,7 +1092,7 @@ document.addEventListener('keydown', e=>{ if(e.key==='Escape' && overlay.classLi
 
 form.addEventListener('submit', async e=>{
   e.preventDefault();
-  const data = {
+  const localObra = {
     nome: document.getElementById('f_nome').value.trim(),
     cliente: document.getElementById('f_cliente').value.trim(),
     contacto: document.getElementById('f_contacto').value.trim(),
@@ -980,37 +1100,59 @@ form.addEventListener('submit', async e=>{
     status: document.getElementById('f_status').value,
     prioridade: document.getElementById('f_prioridade').value,
     responsavel: document.getElementById('f_responsavel').value.trim(),
-    valor: document.getElementById('f_valor').value ? Number(document.getElementById('f_valor').value) : null,
+    valor: document.getElementById('f_valor').value ? Number(document.getElementById('f_valor').value) : 0,
     dataAdjudicacao: document.getElementById('f_dataAdjudicacao').value || null,
     dataMontagem: document.getElementById('f_dataMontagem').value || null,
     notas: document.getElementById('f_notas').value.trim(),
   };
-  if(!data.nome || !data.cliente){ toast('Preencha pelo menos o nome e o cliente.', true); return; }
+  if(!localObra.nome || !localObra.cliente){ toast('Preencha pelo menos o nome e o cliente.', true); return; }
 
-  if(state.editingId){
-    const o = state.obras.find(x=>x.id===state.editingId);
-    Object.assign(o, data);
-  } else {
-    data.id = cid();
-    data.referencia = nextReferencia();
-    state.obras.push(data);
+  btnSaveObra.disabled = true;
+  const row = mapObraToRow(localObra);
+
+  try {
+    if(state.editingId){
+      const { error } = await supabaseClient.from('obras').update(row).eq('id', Number(state.editingId));
+      if(error) throw error;
+      const existing = state.obras.find(x=>x.id===state.editingId);
+      Object.assign(existing, localObra);
+      toast('Obra atualizada na cloud.');
+    } else {
+      const { data, error } = await supabaseClient.from('obras').insert(row).select().single();
+      if(error) throw error;
+      state.obras.push(mapRowToObra(data));
+      toast('Obra criada na cloud.');
+    }
+    closeModal();
+    render();
+  } catch(err){
+    console.error(err);
+    toast('Erro ao guardar no Supabase: ' + errMsg(err), true);
+  } finally {
+    btnSaveObra.disabled = false;
   }
-  await saveData(true);
-  closeModal();
-  render();
 });
 
-document.getElementById('btnDeleteObra').addEventListener('click', async ()=>{
+btnDeleteObra.addEventListener('click', async ()=>{
   if(!state.editingId) return;
   if(!confirm('Eliminar esta obra? Esta ação não pode ser desfeita.')) return;
-  state.obras = state.obras.filter(o=>o.id!==state.editingId);
-  await saveData(false);
-  toast('Obra eliminada.');
-  closeModal();
-  render();
+  btnDeleteObra.disabled = true;
+  try {
+    const { error } = await supabaseClient.from('obras').delete().eq('id', Number(state.editingId));
+    if(error) throw error;
+    state.obras = state.obras.filter(o=>o.id!==state.editingId);
+    toast('Obra eliminada.');
+    closeModal();
+    render();
+  } catch(err){
+    console.error(err);
+    toast('Erro ao eliminar no Supabase: ' + errMsg(err), true);
+  } finally {
+    btnDeleteObra.disabled = false;
+  }
 });
 
-/* ---------- export / print ---------- */
+/* ---------- exportar / imprimir ---------- */
 document.getElementById('btnExport').addEventListener('click', ()=>{
   const headers = ['Referência','Obra','Cliente','Contacto','Morada','Estado','Prioridade','Responsável','Valor','Data Adjudicação','Data Montagem','Notas'];
   const rows = state.obras.map(o=>[
@@ -1029,18 +1171,11 @@ document.getElementById('btnExport').addEventListener('click', ()=>{
 });
 document.getElementById('btnPrint').addEventListener('click', ()=> window.print());
 
-/* ---------- utils ---------- */
-function esc(s){
-  if(s===null||s===undefined) return '';
-  return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
 /* ---------- init ---------- */
 document.querySelector('.nav-item[data-view="kanban"]').classList.add('active');
 loadData();
 
 })();
 </script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </body>
 </html>
