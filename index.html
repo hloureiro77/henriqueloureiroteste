@@ -482,8 +482,9 @@ const STATUSES = [
   {id:'concluida', label:'Concluída'}
 ];
 const STORAGE_KEY = 'obras-zela-v1';
+
 const SUPABASE_URL = 'https://cjofjcvkpgoavpwxnvyy.supabase.co';
-const SUPABASE_KEY = 'COLE_AQUI_A_TUA_PUBLISHABLE_KEY';
+const SUPABASE_KEY = 'COLA_AQUI_A_CHAVE_QUE_COPIASTE_DA_PUBLISHABLE_KEY';
 
 const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let state = {
@@ -515,19 +516,35 @@ function daysDiff(iso){ if(!iso) return null; const d=new Date(iso+'T00:00:00');
 /* ---------- persistence ---------- */
 async function loadData(){
 async function loadData(){
-  const { data, error } = await supabaseClient
-    .from('obras')
-    .select('*')
-    .order('created_at', { ascending: false });
+  try {
+    const { data, error } = await supabaseClient
+      .from('obras')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-  if (error) {
-    console.error('Erro ao carregar:', error);
-    state.obras = [];
-  } else {
-    state.obras = (data || []).map(o => ({
-      ...o,
-      dataPrevista: o.data_entrega || ''
-    }));
+    if (error) {
+      console.error(error);
+      state.obras = seed();
+    } else {
+      state.obras = (data || []).map(o => ({
+        id: o.id,
+        referencia: o.referencia || '',
+        nome: o.nome || '',
+        cliente: o.cliente || '',
+        status: o.estado || 'Adjudicada',
+        responsavel: o.responsavel || '',
+        valor: o.valor || 0,
+        dataPrevista: o.data_entrega || '',
+        notas: o.notas || ''
+      }));
+
+      if (!state.obras.length) {
+        state.obras = seed();
+      }
+    }
+  } catch (e) {
+    console.error('Erro ao carregar dados:', e);
+    state.obras = seed();
   }
 
   state.loaded = true;
@@ -537,28 +554,22 @@ async function loadData(){
 async function saveData(showToast){
   try {
     for (const obra of state.obras) {
-      const payload = {
+      await supabaseClient.from('obras').upsert({
         id: obra.id,
         nome: obra.nome,
         cliente: obra.cliente,
-        estado: obra.status || obra.estado,
+        estado: obra.status || 'Adjudicada',
         responsavel: obra.responsavel,
-        valor: obra.valor || 0,
-        data_entrega: obra.dataPrevista || '',
+        valor: Number(obra.valor || 0),
+        data_entrega: obra.dataPrevista || null,
         notas: obra.notas || ''
-      };
-
-      await supabaseClient
-        .from('obras')
-        .upsert(payload);
+      });
     }
 
-    if (showToast) {
-      toast('Obra guardada.');
-    }
+    if (showToast) toast('Obra guardada.');
   } catch (e) {
     console.error('Erro ao guardar:', e);
-    toast('Erro ao guardar.', true);
+    if (showToast) toast('Erro ao guardar.', true);
   }
 }
 
