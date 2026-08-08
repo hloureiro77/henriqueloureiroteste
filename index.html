@@ -510,23 +510,39 @@ function daysDiff(iso){ if(!iso) return null; const d=new Date(iso+'T00:00:00');
 
 /* ---------- persistence ---------- */
 async function loadData(){
-  try{
-    const res = await window.storage.get(STORAGE_KEY, true);
-    state.obras = res && res.value ? JSON.parse(res.value) : seed();
-  }catch(e){
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+
+    if (raw) {
+      state.obras = JSON.parse(raw);
+    } else {
+      state.obras = seed();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.obras));
+    }
+  } catch (e) {
+    console.error('Erro ao carregar dados:', e);
     state.obras = seed();
   }
-  if(!state.obras.length){ state.obras = seed(); }
+
+  if (!Array.isArray(state.obras) || !state.obras.length) {
+    state.obras = seed();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.obras));
+  }
+
   state.loaded = true;
-  await saveData(false);
   render();
 }
+
 async function saveData(showToast){
-  try{
-    await window.storage.set(STORAGE_KEY, JSON.stringify(state.obras), true);
-    if(showToast) toast('Obra guardada.');
-  }catch(e){
-    toast('Não foi possível guardar. Tente novamente.', true);
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.obras));
+
+    if (showToast) {
+      toast('Obra guardada.');
+    }
+  } catch (e) {
+    console.error('Erro ao guardar dados:', e);
+    toast('Não foi possível guardar os dados.', true);
   }
 }
 
