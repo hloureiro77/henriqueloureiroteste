@@ -964,6 +964,17 @@ form.addEventListener('submit', async e=>{
   }
   await saveData(true);
   closeModal();
+
+// ===== INICIAR A APLICAÇÃO =====
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadData();
+});
+
+})();
+</script>
+</body>
+</html>
+  
   render();
 });
 
