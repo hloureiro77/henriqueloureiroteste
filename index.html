@@ -473,6 +473,18 @@ tr:hover td{background:var(--surface-alt);}
 <script>
 (function(){
 
+/* ---------- SUPABASE ---------- */
+const SUPABASE_URL = 'https://cjofjcykpgoavpwxnyyy.supabase.co';
+
+const SUPABASE_ANON_KEY = 'COLE_AQUI_A_TUA_CHAVE_sb_publishable_';
+
+const supabaseClient = supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
+
+const STATUSES = [
+
 const STATUSES = [
   {id:'adjudicada', label:'Adjudicada'},
   {id:'preparacao', label:'Em Preparação'},
@@ -480,7 +492,6 @@ const STATUSES = [
   {id:'montagem', label:'Em Montagem'},
   {id:'concluida', label:'Concluída'}
 ];
-const STORAGE_KEY = 'obras-zela-v1';
 
 let state = {
   obras: [],
@@ -511,38 +522,62 @@ function daysDiff(iso){ if(!iso) return null; const d=new Date(iso+'T00:00:00');
 /* ---------- persistence ---------- */
 async function loadData(){
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const { data, error } = await supabaseClient
+      .from('obras')
+      .select('*')
+      .order('id', { ascending: true });
 
-    if (raw) {
-      state.obras = JSON.parse(raw);
-    } else {
-      state.obras = seed();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.obras));
-    }
+    if (error) throw error;
+
+    state.obras = (data || []).map(o => ({
+      id: String(o.id),
+      referencia: 'ZL-' + String(o.id).padStart(3,'0'),
+      nome: o.nome || '',
+      cliente: o.cliente || '',
+      contacto: '',
+      morada: '',
+      status: o.estado || 'adjudicada',
+      prioridade: 'media',
+      responsavel: o.responsavel || '',
+      valor: Number(o.valor || 0),
+      dataAdjudicacao: '',
+      dataMontagem: o.data_entrega || '',
+      notas: o.notas || ''
+    }));
+
+    state.loaded = true;
+    render();
+
   } catch (e) {
-    console.error('Erro ao carregar dados:', e);
-    state.obras = seed();
+    console.error(e);
+    toast('Erro ao ligar ao Supabase', true);
   }
-
-  if (!Array.isArray(state.obras) || !state.obras.length) {
-    state.obras = seed();
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.obras));
-  }
-
-  state.loaded = true;
-  render();
 }
-
 async function saveData(showToast){
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.obras));
+    const obra = state.obras.find(o => o.id === state.editingId);
+    if (!obra) return;
 
-    if (showToast) {
-      toast('Obra guardada.');
-    }
+    const { error } = await supabaseClient
+      .from('obras')
+      .upsert({
+        id: Number(obra.id),
+        nome: obra.nome,
+        cliente: obra.cliente,
+        estado: obra.status,
+        responsavel: obra.responsavel,
+        valor: obra.valor,
+        data_entrega: obra.dataMontagem || null,
+        notas: obra.notas
+      });
+
+    if (error) throw error;
+
+    if (showToast) toast('Obra guardada na cloud.');
+
   } catch (e) {
-    console.error('Erro ao guardar dados:', e);
-    toast('Não foi possível guardar os dados.', true);
+    console.error(e);
+    toast('Erro ao guardar no Supabase', true);
   }
 }
 
@@ -1008,5 +1043,6 @@ loadData();
 
 })();
 </script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </body>
 </html>
